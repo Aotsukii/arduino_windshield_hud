@@ -1,30 +1,37 @@
 #include "SevSeg.h"
 #include "String.h"
 #include <SoftwareSerial.h> 
+#include <ELMduino.h>
 
 SevSeg sevseg;
 SevSeg sevseg2;
 SevSeg sevseg3;
 SoftwareSerial HC05(11, 12);
-// e0:dc:ff:f2:93:06 -> mac address of my phone
+ELM327 myELM327;
+
+uint32_t kph = 0;
+
 
 void setup()
 {
-  Serial.begin(9600); 
-  HC05.begin(9600);
+  Serial.begin(9600);
 
   while (!Serial) 
   {
     ;
   }
   Serial.println("Ready to connect\nDefault password is 1234\n"); 
-  Serial.println("AT+RESET\n");
-  Serial.println("AT+ROLE=1\n");
-  Serial.println("AT+CMODE=0\n");
-  Serial.println("AT+INIT\n");
-  Serial.println("AT+BIND=0010,CC,4F3603\n"); //Replace with MAC Address of ELM327
-  Serial.println("AT+PAIR=0010,CC,4F3603,20\n"); //Replace with MAC Address of ELM327, 20 is the timeout value
-  Serial.println("AT+LINK=0010,CC,4F3603\n"); //Replace with MAC Address of ELM327
+
+  HC05.begin(9600);
+  HC05.write("AT+RESET\n");
+  HC05.write("AT+ROLE=1\n");
+  HC05.write("AT+CMODE=0\n");
+  HC05.write("AT+INIT\n");
+  HC05.write("AT+BIND=0010,CC,4F3603\n"); //Replace with MAC Address of ELM327
+  HC05.write("AT+PAIR=0010,CC,4F3603,20\n"); //Replace with MAC Address of ELM327, 20 is the timeout value
+  HC05.write("AT+LINK=0010,CC,4F3603\n"); //Replace with MAC Address of ELM327
+  delay(1000);
+  myELM327.begin(HC05, true, 2000);
 
   byte numDigits = 1;
   byte digitPins[] = {};
@@ -51,39 +58,44 @@ void loop()
   if (Serial.available()) {
     HC05.write(Serial.read());
   }
-  // displayKmh();
-  sevseg.setNumber(4);
-  sevseg2.setNumber(9);
-  sevseg3.setNumber(-1);
 
-  sevseg.setBrightness(1); // -200 to 200
-  sevseg2.setBrightness(1); // -200 to 200
-  sevseg3.setBrightness(1); // -200 to 200
+  float tempkph = myELM327.kph();
 
-  sevseg.refreshDisplay();
-  sevseg2.refreshDisplay();  
-  sevseg3.refreshDisplay();  
+  if (myELM327.nb_rx_state == ELM_SUCCESS)
+  {
+    kph = (uint32_t)tempkph;
+    displayKmh(kph);
+  }
+  //sevseg.setNumber(4);
+  //sevseg2.setNumber(9);
+  //sevseg3.setNumber(-1);
+
+  //sevseg.setBrightness(1); // -200 to 200
+  //sevseg2.setBrightness(1); // -200 to 200
+  //sevseg3.setBrightness(1); // -200 to 200
+
+  //sevseg.refreshDisplay();
+  //sevseg2.refreshDisplay();  
+  //sevseg3.refreshDisplay();  
 }
 
-void displayKmh()
+void displayKmh(uint32_t rpm)
 {
-  for (int i = 1; i <= 999; i++)
-  {
-    if (i < 10) 
+    if (rpm < 10) 
     {
-      sevseg3.setNumber(i);
+      sevseg3.setNumber(rpm);
     }
-    else if (i < 100)
+    else if (rpm < 100)
     {
       char buffer[2];
-      itoa(i, buffer, 10);
+      itoa(rpm, buffer, 10);
       sevseg2.setNumber(buffer[0] - '0');
       sevseg3.setNumber(buffer[1] - '0');
     }
     else 
     {
       char buffer[3];
-      itoa(i, buffer, 10);
+      itoa(rpm, buffer, 10);
   
       sevseg.setNumber(buffer[0] - '0');
       sevseg2.setNumber(buffer[1] - '0');
@@ -97,6 +109,4 @@ void displayKmh()
     sevseg.refreshDisplay();
     sevseg2.refreshDisplay();  
     sevseg3.refreshDisplay();  
-    delay(5);
-  }
 }
