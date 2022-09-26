@@ -1,112 +1,99 @@
+#include <SoftwareSerial.h>
 #include "SevSeg.h"
-#include "String.h"
-#include <SoftwareSerial.h> 
 #include <ELMduino.h>
 
 SevSeg sevseg;
-SevSeg sevseg2;
-SevSeg sevseg3;
-SoftwareSerial HC05(11, 12);
+
+#define rxPin 10
+#define txPin 11
+#define baudrate 38400
+String msg;
+SoftwareSerial hc05(rxPin ,txPin);
 ELM327 myELM327;
 
 uint32_t kph = 0;
+uint32_t rpm = 0;
 
+int brightness = 100;
+int dayBrightness = 100;
+int nightBrightness = 0;
 
 void setup()
 {
-  Serial.begin(9600);
+    pinMode(rxPin,INPUT);
+    pinMode(txPin,OUTPUT);
+  
+    Serial.begin(9600);
+    Serial.println("ENTER AT Commands:");
+    hc05.begin(baudrate);
 
-  while (!Serial) 
-  {
-    ;
-  }
-  Serial.println("Ready to connect\nDefault password is 1234\n"); 
+    byte numDigits = 4;
+    byte digitPins[] = {30, 31, 32, 33};
+    byte segmentPins[] = {25, 23, 22, 29, 28, 26, 27, 24}; // reorder segments for reflexion display
 
-  HC05.begin(9600);
-  HC05.write("AT+RESET\n");
-  HC05.write("AT+ROLE=1\n");
-  HC05.write("AT+CMODE=0\n");
-  HC05.write("AT+INIT\n");
-  HC05.write("AT+BIND=0010,CC,4F3603\n"); //Replace with MAC Address of ELM327
-  HC05.write("AT+PAIR=0010,CC,4F3603,20\n"); //Replace with MAC Address of ELM327, 20 is the timeout value
-  HC05.write("AT+LINK=0010,CC,4F3603\n"); //Replace with MAC Address of ELM327
-  delay(1000);
-  myELM327.begin(HC05, true, 2000);
+    // 3x seven segment display setup
+    bool resistorsOnSegments = true;
+    bool updateWithDelaysIn = true;
+    byte hardwareConfig = COMMON_CATHODE;
+    
+    sevseg.begin(hardwareConfig, numDigits, digitPins, segmentPins, resistorsOnSegments);
+    // sevseg.setNumber(420 , -1);
+    // sevseg.setBrightness(brightness);
+    // sevseg.refreshDisplay();
 
-  byte numDigits = 1;
-  byte digitPins[] = {};
+    // HC-05 force role + connect to mac address
+    // OBDII MAC ADDRESS : 0010,CC,4F3603
+    // PHONE MAC ADDRESS : E0DC,FF,F29306
+    Serial.println("AT+RESET\n");
+    Serial.println("AT+PSWD=1234\n");
+    Serial.println("AT+ROLE=1\n");
+    Serial.println("AT+CMODE=0\n");
+    Serial.println("AT+INIT\n");
+    Serial.println("AT+BIND=0010,CC,4F3603\n"); //Replace with MAC Address of ELM327
+    Serial.println("AT+PAIR=0010,CC,4F3603,20\n"); //Replace with MAC Address of ELM327, 20 is the timeout value
+    Serial.println("AT+LINK=0010,CC,4F3603\n"); //Replace with MAC Address of ELM327
 
-  // Segment pins are switched to be readable in a reflexion: 7<->6  4<->3  5<->2
-  byte segmentPins1[] = {5, 4, 3, 2, 7, 6, 8};
-  byte segmentPins2[] = {25, 24, 23, 22, 27, 26, 28};
-  byte segmentPins3[] = {32, 33, 30, 31, 35, 34, 36};
-
-  bool resistorsOnSegments = true;
-  byte hardwareConfigAnode = COMMON_ANODE; 
-  byte hardwareConfigCathode = COMMON_CATHODE; 
-
-  sevseg.begin(hardwareConfigAnode, numDigits, digitPins, segmentPins1, resistorsOnSegments);
-  sevseg2.begin(hardwareConfigAnode, numDigits, digitPins, segmentPins2, resistorsOnSegments);
-  sevseg3.begin(hardwareConfigAnode, numDigits, digitPins, segmentPins3, resistorsOnSegments);
+    // Init elm327
+    myELM327.begin(hc05, true, 2000);
 }
 
 void loop()
 {
-  if (HC05.available()) {
-    Serial.write(HC05.read());
-  }
-  if (Serial.available()) {
-    HC05.write(Serial.read());
-  }
-
-  float tempkph = myELM327.kph();
-
-  if (myELM327.nb_rx_state == ELM_SUCCESS)
-  {
-    kph = (uint32_t)tempkph;
-    displayKmh(kph);
-  }
-  //sevseg.setNumber(4);
-  //sevseg2.setNumber(9);
-  //sevseg3.setNumber(-1);
-
-  //sevseg.setBrightness(1); // -200 to 200
-  //sevseg2.setBrightness(1); // -200 to 200
-  //sevseg3.setBrightness(1); // -200 to 200
-
-  //sevseg.refreshDisplay();
-  //sevseg2.refreshDisplay();  
-  //sevseg3.refreshDisplay();  
-}
-
-void displayKmh(uint32_t rpm)
-{
-    if (rpm < 10) 
+    readSerialPort();
+    
+    if (msg!="") 
     {
-      sevseg3.setNumber(rpm);
-    }
-    else if (rpm < 100)
-    {
-      char buffer[2];
-      itoa(rpm, buffer, 10);
-      sevseg2.setNumber(buffer[0] - '0');
-      sevseg3.setNumber(buffer[1] - '0');
-    }
-    else 
-    {
-      char buffer[3];
-      itoa(rpm, buffer, 10);
-  
-      sevseg.setNumber(buffer[0] - '0');
-      sevseg2.setNumber(buffer[1] - '0');
-      sevseg3.setNumber(buffer[2] - '0');
+        hc05.println(msg);
     }
     
-    sevseg.setBrightness(200); // -200 to 200
-    sevseg2.setBrightness(200); // -200 to 200
-    sevseg3.setBrightness(200); // -200 to 200
-  
+    if (hc05.available()>0)
+    {
+      Serial.write(hc05.read());
+    }
+
+    float tempKPH = myELM327.kph();
+    float tempRPM = myELM327.rpm();
+    if (myELM327.nb_rx_state == ELM_SUCCESS)
+    {
+        Serial.println(tempKPH);
+        kph = (uint32_t)tempKPH;
+        rpm = (uint32_t)tempRPM;
+        sevseg.setNumber(kph , -1);
+    }
+    sevseg.setBrightness(brightness);
     sevseg.refreshDisplay();
-    sevseg2.refreshDisplay();  
-    sevseg3.refreshDisplay();  
+}
+
+void readSerialPort()
+{
+    msg="";
+    while (Serial.available())
+    {
+        delay(10);  
+        if (Serial.available() >0)
+        {
+            char c = Serial.read(); // Gets one byte from serial buffer
+            msg += c; // Makes the string readString
+        }
+    }
 }
